@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <!-- Summary Cards -->
+    <div class="glass-container" style="text-align: center;">
+        <h3 style="color: #e74c3c; margin-bottom: 0.5rem;">You Owe</h3>
+        <div style="font-size: 2rem; font-weight: bold;">PKR {{ "%.2f"|format(total_debt) }}</div>
+    </div>
+
+    <div class="glass-container" style="text-align: center;">
+        <h3 style="color: #2ecc71; margin-bottom: 0.5rem;">You're Owed</h3>
+        <div style="font-size: 2rem; font-weight: bold;">PKR {{ "%.2f"|format(total_owed) }}</div>
+    </div>
+
+    <div class="glass-container" style="text-align: center; grid-column: span 2;">
+        <a href="{{ url_for('add_expense') }}" class="btn" style="width: 100%; padding: 1rem; font-size: 1.1rem;">Add
+            New Expense</a>
+    </div>
+
+    <!-- My Debts -->
+    <div class="glass-container">
+        <h3>My Debts (To Pay)</h3>
+        {% if my_debts %}
+        {% for debt in my_debts %}
+        <div class="list-item">
+            <div>
+                <div><strong>{{ debt.expense.description }}</strong></div>
+                <small>Paid by {{ debt.expense.payer.username }} on {{ debt.expense.date.strftime('%Y-%m-%d') }}</small>
+            </div>
+            <div style="text-align: right;">
+                <div style="color: #e74c3c; font-weight: bold; margin-bottom: 5px;">PKR {{
+                    "%.2f"|format(debt.amount_due) }}</div>
+                <a href="{{ url_for('pay_settlement', settlement_id=debt.id) }}" class="btn"
+                    style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">Pay</a>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div style="text-align: center; padding: 2rem; color: #999;">
+            <p>You're all settled up! 🎉</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Owed To Me -->
+    <div class="glass-container">
+        <h3>Owed To Me</h3>
+        {% if owed_to_me %}
+        {% for debt in owed_to_me %}
+        <div class="list-item">
+            <div>
+                <div><strong>{{ debt.expense.description }}</strong></div>
+                <small>Owed by {{ debt.debtor.username }}</small>
+            </div>
+            <div style="font-weight: bold; color: #2ecc71;">
+                PKR {{ "%.2f"|format(debt.amount_due) }}
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div style="text-align: center; padding: 2rem; color: #999;">
+            <p>No one owes you money right now.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

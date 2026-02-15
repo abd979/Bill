@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="glass-container" style="max-width: 600px; margin: 2rem auto;">
+    <h2>Add Expense</h2>
+    <p style="margin-bottom: 20px; color: #666;">Enter the total amount and select who to split it with.</p>
+    <form action="{{ url_for('add_expense') }}" method="POST">
+        <div class="input-group">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Description</label>
+            <input type="text" name="description" placeholder="e.g., Saturday Dinner" required autofocus>
+        </div>
+        <div class="input-group">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Total Amount (PKR)</label>
+            <input type="number" step="0.01" name="amount" placeholder="0.00" required>
+        </div>
+
+        <div class="input-group">
+            <label style="display: block; margin-bottom: 1rem; font-weight: 600;">Split with:</label>
+            <div
+                style="max-height: 300px; overflow-y: auto; background: rgba(255,255,255,0.3); padding: 1rem; border-radius: 8px;">
+                {% if users %}
+                {% for user in users %}
+                <div class="checkbox-item" style="margin-bottom: 0.8rem;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" name="selected_users" value="{{ user.id }}" {% if
+                            user.id==current_user.id %}checked{% endif %}
+                            style="width: auto; margin-right: 0.8rem; cursor: pointer;">
+                        <span style="font-size: 1rem;">{{ user.username }}</span>
+                        {% if user.id == current_user.id %}
+                        <span style="margin-left: 0.5rem; color: #2575fc; font-size: 0.9rem;">(You)</span>
+                        {% endif %}
+                    </label>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p style="color: #999; text-align: center;">No users available. Ask admin to add users first.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if users %}
+        <button type="submit" class="btn" style="width: 100%; margin-top: 1rem;">Split Expense</button>
+        {% endif %}
+    </form>
+</div>
+{% endblock %}
