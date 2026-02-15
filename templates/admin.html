@@ -1,18 +1,151 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="glass-container" style="max-width: 500px; margin: 2rem auto;">
-    <h2>Admin Panel</h2>
-    <h3>Add New User</h3>
-    <p style="margin-bottom: 20px; color: #666;">Create accounts for people you want to split bills with.</p>
-    <form action="{{ url_for('add_user') }}" method="POST">
-        <div class="input-group">
-            <input type="text" name="username" placeholder="New Username" required autofocus>
+<div style="max-width: 1200px; margin: 0 auto;">
+    <!-- Add User Section -->
+    <div class="glass-container" style="margin: 2rem auto;">
+        <h2>Admin Panel</h2>
+        <h3>Add New User</h3>
+        <p style="margin-bottom: 20px; color: #666;">Create accounts for people you want to split bills with.</p>
+        <form action="{{ url_for('add_user') }}" method="POST">
+            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 1rem; align-items: end;">
+                <div class="input-group" style="margin-bottom: 0;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Username</label>
+                    <input type="text" name="username" placeholder="New Username" required>
+                </div>
+                <div class="input-group" style="margin-bottom: 0;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Password</label>
+                    <input type="password" name="password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn">Add User</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- User Management Section -->
+    <div class="glass-container" style="margin: 2rem auto;">
+        <h3>User Management</h3>
+        <p style="margin-bottom: 20px; color: #666;">Total Users: <strong>{{ user_stats|length }}</strong></p>
+
+        {% if user_stats %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid rgba(0,0,0,0.1);">
+                        <th style="padding: 1rem; text-align: left;">Username</th>
+                        <th style="padding: 1rem; text-align: right;">They Owe</th>
+                        <th style="padding: 1rem; text-align: right;">Owed to Them</th>
+                        <th style="padding: 1rem; text-align: right;">Net Balance</th>
+                        <th style="padding: 1rem; text-align: center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in user_stats %}
+                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.05);">
+                        <td style="padding: 1rem;">
+                            <strong>{{ stat.user.username }}</strong>
+                        </td>
+                        <td style="padding: 1rem; text-align: right; color: #e74c3c;">
+                            {% if stat.owes > 0 %}
+                            PKR {{ "%.2f"|format(stat.owes) }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td style="padding: 1rem; text-align: right; color: #2ecc71;">
+                            {% if stat.owed > 0 %}
+                            PKR {{ "%.2f"|format(stat.owed) }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td style="padding: 1rem; text-align: right; font-weight: bold;">
+                            {% if stat.balance > 0 %}
+                            <span style="color: #2ecc71;">+PKR {{ "%.2f"|format(stat.balance) }}</span>
+                            {% elif stat.balance < 0 %} <span style="color: #e74c3c;">PKR {{ "%.2f"|format(stat.balance)
+                                }}</span>
+                                {% else %}
+                                <span style="color: #999;">PKR 0.00</span>
+                                {% endif %}
+                        </td>
+                        <td style="padding: 1rem; text-align: center;">
+                            <form action="{{ url_for('delete_user', user_id=stat.user.id) }}" method="POST"
+                                onsubmit="return confirm('Are you sure you want to delete {{ stat.user.username }}? This will remove all their expenses and settlements.');"
+                                style="display: inline;">
+                                <button type="submit" class="btn"
+                                    style="background: linear-gradient(90deg, #e74c3c, #c0392b); padding: 0.5rem 1rem; font-size: 0.9rem;">
+                                    Delete
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <div class="input-group">
-            <input type="password" name="password" placeholder="Password" required>
+        {% else %}
+        <div style="text-align: center; padding: 2rem; color: #999;">
+            <p>No users yet. Add your first user above!</p>
         </div>
-        <button type="submit" class="btn" style="width: 100%;">Create User</button>
-    </form>
+        {% endif %}
+    </div>
 </div>
+
+<style>
+    /* Mobile responsive table */
+    @media (max-width: 768px) {
+        table {
+            font-size: 0.85rem;
+        }
+
+        th,
+        td {
+            padding: 0.5rem !important;
+        }
+
+        .btn {
+            padding: 0.4rem 0.8rem !important;
+            font-size: 0.8rem !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+
+        table,
+        thead,
+        tbody,
+        th,
+        td,
+        tr {
+            display: block;
+        }
+
+        thead tr {
+            display: none;
+        }
+
+        tr {
+            margin-bottom: 1rem;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        td {
+            text-align: left !important;
+            padding: 0.5rem !important;
+            position: relative;
+            padding-left: 50% !important;
+        }
+
+        td:before {
+            content: attr(data-label);
+            position: absolute;
+            left: 0.5rem;
+            font-weight: bold;
+            color: #666;
+        }
+    }
+</style>
 {% endblock %}

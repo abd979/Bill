@@ -89,7 +89,62 @@ def add_user():
             flash('User added successfully')
         return redirect(url_for('add_user')) # Stay on admin page
     
-    return render_template('admin.html')
+    # GET request - show all users with statistics
+    all_users = User.query.filter_by(is_admin=False).all()
+    
+    # Calculate statistics for each user
+    user_stats = []
+    for user in all_users:
+        # Calculate what they owe
+        debts = Settlement.query.filter_by(user_id=user.id, is_paid=False).all()
+        total_owed_by_user = sum(debt.amount_due for debt in debts)
+        
+        # Calculate what they're owed (expenses they paid for)
+        expenses_paid = Expense.query.filter_by(payer_id=user.id).all()
+        total_owed_to_user = 0
+        for exp in expenses_paid:
+            for settlement in exp.settlements:
+                if not settlement.is_paid and settlement.user_id != user.id:
+                    total_owed_to_user += settlement.amount_due
+        
+        user_stats.append({
+            'user': user,
+            'owes': total_owed_by_user,
+            'owed': total_owed_to_user,
+            'balance': total_owed_to_user - total_owed_by_user
+        })
+    
+    return render_template('admin.html', user_stats=user_stats)
+
+@app.route('/delete_user/<int:user_id>', methods=['POST'])
+@login_required
+def delete_user(user_id):
+    if not current_user.is_admin:
+        flash('Unauthorized')
+        return redirect(url_for('dashboard'))
+    
+    user = User.query.get_or_404(user_id)
+    
+    # Prevent deleting admin
+    if user.is_admin:
+        flash('Cannot delete admin users')
+        return redirect(url_for('add_user'))
+    
+    # Delete all settlements related to this user
+    Settlement.query.filter_by(user_id=user_id).delete()
+    
+    # Delete all expenses paid by this user (and their settlements)
+    expenses = Expense.query.filter_by(payer_id=user_id).all()
+    for expense in expenses:
+        Settlement.query.filter_by(expense_id=expense.id).delete()
+        db.session.delete(expense)
+    
+    # Delete the user
+    db.session.delete(user)
+    db.session.commit()
+    
+    flash(f'User {user.username} deleted successfully')
+    return redirect(url_for('add_user'))
 
 @app.route('/add_expense', methods=['GET', 'POST'])
 @login_required
@@ -155,6 +210,4 @@ def history():
     return render_template('history.html', expenses=expenses)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
-
+    app.run(debug=True)
