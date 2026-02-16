@@ -151,7 +151,7 @@ def delete_user(user_id):
 def add_expense():
     if request.method == 'POST':
         description = request.form.get('description')
-        amount = float(request.form.get('amount'))
+        total_amount = float(request.form.get('amount'))
         
         # Get selected users from checkboxes
         selected_user_ids = request.form.getlist('selected_users')
@@ -161,8 +161,11 @@ def add_expense():
             users = User.query.filter_by(is_admin=False).all()
             return render_template('add_expense.html', users=users)
         
+        # Check if custom amounts are provided
+        use_custom = request.form.get('use_custom') == 'true'
+        
         # Create Expense
-        new_expense = Expense(description=description, amount=amount, payer_id=current_user.id)
+        new_expense = Expense(description=description, amount=total_amount, payer_id=current_user.id)
         db.session.add(new_expense)
         db.session.commit()
         
@@ -170,14 +173,37 @@ def add_expense():
         if str(current_user.id) not in selected_user_ids:
             selected_user_ids.append(str(current_user.id))
         
-        # Split equally among selected users
-        split_amount = amount / len(selected_user_ids)
-        
-        for user_id in selected_user_ids:
-            user_id = int(user_id)
-            is_paid = (user_id == current_user.id)
-            settlement = Settlement(expense_id=new_expense.id, user_id=user_id, amount_due=split_amount, is_paid=is_paid)
-            db.session.add(settlement)
+        if use_custom:
+            # Use custom amounts
+            total_custom = 0
+            for user_id in selected_user_ids:
+                custom_amount = request.form.get(f'amount_{user_id}', '0')
+                try:
+                    amount = float(custom_amount)
+                    total_custom += amount
+                except:
+                    amount = 0
+                
+                user_id = int(user_id)
+                is_paid = (user_id == current_user.id)
+                settlement = Settlement(expense_id=new_expense.id, user_id=user_id, amount_due=amount, is_paid=is_paid)
+                db.session.add(settlement)
+            
+            # Validate that custom amounts match total
+            if abs(total_custom - total_amount) > 0.01:
+                db.session.rollback()
+                flash(f'Custom amounts (PKR {total_custom:.2f}) must equal total amount (PKR {total_amount:.2f})')
+                users = User.query.filter_by(is_admin=False).all()
+                return render_template('add_expense.html', users=users)
+        else:
+            # Equal split
+            split_amount = total_amount / len(selected_user_ids)
+            
+            for user_id in selected_user_ids:
+                user_id = int(user_id)
+                is_paid = (user_id == current_user.id)
+                settlement = Settlement(expense_id=new_expense.id, user_id=user_id, amount_due=split_amount, is_paid=is_paid)
+                db.session.add(settlement)
         
         db.session.commit()
         flash('Expense split successfully!')
@@ -220,9 +246,11 @@ def edit_expense(expense_id):
         if not selected_user_ids:
             flash('Please select at least one user to split with')
             users = User.query.filter_by(is_admin=False).all()
-            # Get currently selected users
             current_users = [s.user_id for s in expense.settlements]
             return render_template('edit_expense.html', expense=expense, users=users, current_users=current_users)
+        
+        # Check if custom amounts are provided
+        use_custom = request.form.get('use_custom') == 'true'
         
         # Update expense
         expense.description = new_description
@@ -235,14 +263,38 @@ def edit_expense(expense_id):
         if str(expense.payer_id) not in selected_user_ids:
             selected_user_ids.append(str(expense.payer_id))
         
-        # Create new settlements
-        split_amount = new_amount / len(selected_user_ids)
-        
-        for user_id in selected_user_ids:
-            user_id = int(user_id)
-            is_paid = (user_id == expense.payer_id)
-            settlement = Settlement(expense_id=expense.id, user_id=user_id, amount_due=split_amount, is_paid=is_paid)
-            db.session.add(settlement)
+        if use_custom:
+            # Use custom amounts
+            total_custom = 0
+            for user_id in selected_user_ids:
+                custom_amount = request.form.get(f'amount_{user_id}', '0')
+                try:
+                    amount = float(custom_amount)
+                    total_custom += amount
+                except:
+                    amount = 0
+                
+                user_id = int(user_id)
+                is_paid = (user_id == expense.payer_id)
+                settlement = Settlement(expense_id=expense.id, user_id=user_id, amount_due=amount, is_paid=is_paid)
+                db.session.add(settlement)
+            
+            # Validate that custom amounts match total
+            if abs(total_custom - new_amount) > 0.01:
+                db.session.rollback()
+                flash(f'Custom amounts (PKR {total_custom:.2f}) must equal total amount (PKR {new_amount:.2f})')
+                users = User.query.filter_by(is_admin=False).all()
+                current_users = [int(uid) for uid in selected_user_ids]
+                return render_template('edit_expense.html', expense=expense, users=users, current_users=current_users)
+        else:
+            # Equal split
+            split_amount = new_amount / len(selected_user_ids)
+            
+            for user_id in selected_user_ids:
+                user_id = int(user_id)
+                is_paid = (user_id == expense.payer_id)
+                settlement = Settlement(expense_id=expense.id, user_id=user_id, amount_due=split_amount, is_paid=is_paid)
+                db.session.add(settlement)
         
         db.session.commit()
         flash('Expense updated successfully!')
@@ -251,7 +303,8 @@ def edit_expense(expense_id):
     # GET request - show edit form
     users = User.query.filter_by(is_admin=False).all()
     current_users = [s.user_id for s in expense.settlements]
-    return render_template('edit_expense.html', expense=expense, users=users, current_users=current_users)
+    current_amounts = {s.user_id: s.amount_due for s in expense.settlements}
+    return render_template('edit_expense.html', expense=expense, users=users, current_users=current_users, current_amounts=current_amounts)
 
 @app.route('/delete_expense/<int:expense_id>', methods=['POST'])
 @login_required
@@ -394,6 +447,4 @@ def history():
                           user_filter=user_filter, status_filter=status_filter)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
-
+    app.run(debug=True)

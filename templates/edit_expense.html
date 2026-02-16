@@ -4,38 +4,70 @@
 <div class="glass-container" style="max-width: 600px; margin: 2rem auto;">
     <h2>Edit Expense</h2>
     <p style="margin-bottom: 20px; color: #666;">Modify the expense details and update who it's split with.</p>
-    <form action="{{ url_for('edit_expense', expense_id=expense.id) }}" method="POST">
+    <form action="{{ url_for('edit_expense', expense_id=expense.id) }}" method="POST" id="expenseForm">
         <div class="input-group">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Description</label>
             <input type="text" name="description" value="{{ expense.description }}" required autofocus>
         </div>
         <div class="input-group">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Total Amount (PKR)</label>
-            <input type="number" step="0.01" name="amount" value="{{ expense.amount }}" required>
+            <input type="number" step="0.01" name="amount" id="totalAmount" value="{{ expense.amount }}" required
+                onchange="updateSplits()">
         </div>
+
+        <!-- Split Method -->
+        <div class="input-group">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Split Method</label>
+            <div style="display: flex; gap: 1rem;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="split_method" value="equal" checked onchange="toggleSplitMethod()"
+                        style="width: auto; margin-right: 0.5rem;">
+                    <span>Equal Split</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="split_method" value="custom" onchange="toggleSplitMethod()"
+                        style="width: auto; margin-right: 0.5rem;">
+                    <span>Custom Amounts</span>
+                </label>
+            </div>
+        </div>
+
+        <input type="hidden" name="use_custom" id="useCustom" value="false">
 
         <div class="input-group">
             <label style="display: block; margin-bottom: 1rem; font-weight: 600;">Split with:</label>
             <div
-                style="max-height: 300px; overflow-y: auto; background: rgba(255,255,255,0.3); padding: 1rem; border-radius: 8px;">
+                style="max-height: 400px; overflow-y: auto; background: rgba(255,255,255,0.3); padding: 1rem; border-radius: 8px;">
                 {% if users %}
                 {% for user in users %}
-                <div class="checkbox-item" style="margin-bottom: 0.8rem;">
-                    <label style="display: flex; align-items: center; cursor: pointer;">
+                <div class="checkbox-item"
+                    style="margin-bottom: 0.8rem; display: flex; align-items: center; justify-content: space-between;">
+                    <label style="display: flex; align-items: center; cursor: pointer; flex: 1;">
                         <input type="checkbox" name="selected_users" value="{{ user.id }}" {% if user.id in
-                            current_users %}checked{% endif %}
+                            current_users %}checked{% endif %} onchange="updateSplits()"
                             style="width: auto; margin-right: 0.8rem; cursor: pointer;">
                         <span style="font-size: 1rem;">{{ user.username }}</span>
                         {% if user.id == expense.payer_id %}
                         <span style="margin-left: 0.5rem; color: #2575fc; font-size: 0.9rem;">(Payer)</span>
                         {% endif %}
                     </label>
+                    <div class="custom-amount-input" style="display: none; width: 150px;">
+                        <input type="number" step="0.01" name="amount_{{ user.id }}" id="amount_{{ user.id }}"
+                            placeholder="PKR" value="{{ current_amounts.get(user.id, 0) }}"
+                            style="width: 100%; padding: 0.5rem; font-size: 0.9rem;" onchange="updateTotal()">
+                    </div>
                 </div>
                 {% endfor %}
                 {% else %}
                 <p style="color: #999; text-align: center;">No users available.</p>
                 {% endif %}
             </div>
+        </div>
+
+        <div id="totalValidation"
+            style="margin-top: 1rem; padding: 0.8rem; background: rgba(231, 76, 60, 0.2); border-radius: 8px; display: none;">
+            <strong>Warning:</strong> Custom amounts total: <span id="customTotal">0.00</span> PKR (should equal <span
+                id="expectedTotal">0.00</span> PKR)
         </div>
 
         <div style="display: flex; gap: 1rem; margin-top: 1rem;">
@@ -45,4 +77,70 @@
         </div>
     </form>
 </div>
+
+<script>
+    function toggleSplitMethod() {
+        const method = document.querySelector('input[name="split_method"]:checked').value;
+        const customInputs = document.querySelectorAll('.custom-amount-input');
+        const useCustomField = document.getElementById('useCustom');
+
+        if (method === 'custom') {
+            customInputs.forEach(input => input.style.display = 'block');
+            useCustomField.value = 'true';
+            updateTotal();
+        } else {
+            customInputs.forEach(input => input.style.display = 'none');
+            useCustomField.value = 'false';
+            document.getElementById('totalValidation').style.display = 'none';
+            updateSplits();
+        }
+    }
+
+    function updateSplits() {
+        const method = document.querySelector('input[name="split_method"]:checked').value;
+        if (method === 'equal') {
+            const totalAmount = parseFloat(document.getElementById('totalAmount').value) || 0;
+            const selectedUsers = document.querySelectorAll('input[name="selected_users"]:checked');
+            const count = selectedUsers.length;
+
+            if (count > 0) {
+                const splitAmount = (totalAmount / count).toFixed(2);
+                selectedUsers.forEach(checkbox => {
+                    const userId = checkbox.value;
+                    const amountInput = document.getElementById(`amount_${userId}`);
+                    if (amountInput) {
+                        amountInput.value = splitAmount;
+                    }
+                });
+            }
+        }
+    }
+
+    function updateTotal() {
+        const method = document.querySelector('input[name="split_method"]:checked').value;
+        if (method === 'custom') {
+            const totalAmount = parseFloat(document.getElementById('totalAmount').value) || 0;
+            const selectedUsers = document.querySelectorAll('input[name="selected_users"]:checked');
+
+            let customTotal = 0;
+            selectedUsers.forEach(checkbox => {
+                const userId = checkbox.value;
+                const amountInput = document.getElementById(`amount_${userId}`);
+                if (amountInput) {
+                    customTotal += parseFloat(amountInput.value) || 0;
+                }
+            });
+
+            document.getElementById('customTotal').textContent = customTotal.toFixed(2);
+            document.getElementById('expectedTotal').textContent = totalAmount.toFixed(2);
+
+            const validationDiv = document.getElementById('totalValidation');
+            if (Math.abs(customTotal - totalAmount) > 0.01) {
+                validationDiv.style.display = 'block';
+            } else {
+                validationDiv.style.display = 'none';
+            }
+        }
+    }
+</script>
 {% endblock %}
