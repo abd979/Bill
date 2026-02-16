@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; padding: 2rem;">
+    <h2>My Statistics</h2>
+    <p style="color: #666; margin-bottom: 2rem;">Track your spending patterns and financial overview</p>
+
+    <!-- Summary Cards -->
+    <div
+        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+        <div class="glass-container" style="text-align: center;">
+            <h3 style="font-size: 0.95rem; color: #666; margin-bottom: 0.5rem;">Total Spent</h3>
+            <div style="font-size: 2rem; font-weight: bold; color: #2575fc;">PKR {{ "%.2f"|format(total_spent) }}</div>
+        </div>
+
+        <div class="glass-container" style="text-align: center;">
+            <h3 style="font-size: 0.95rem; color: #666; margin-bottom: 0.5rem;">I Owe</h3>
+            <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">PKR {{ "%.2f"|format(total_owed) }}</div>
+        </div>
+
+        <div class="glass-container" style="text-align: center;">
+            <h3 style="font-size: 0.95rem; color: #666; margin-bottom: 0.5rem;">Owed to Me</h3>
+            <div style="font-size: 2rem; font-weight: bold; color: #2ecc71;">PKR {{ "%.2f"|format(total_owed_to_me) }}
+            </div>
+        </div>
+
+        <div class="glass-container" style="text-align: center;">
+            <h3 style="font-size: 0.95rem; color: #666; margin-bottom: 0.5rem;">Net Balance</h3>
+            <div
+                style="font-size: 2rem; font-weight: bold; color: {% if net_balance >= 0 %}#2ecc71{% else %}#e74c3c{% endif %};">
+                {% if net_balance >= 0 %}+{% endif %}PKR {{ "%.2f"|format(net_balance) }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+        <!-- Monthly Spending Trend -->
+        <div class="glass-container">
+            <h3>Monthly Spending Trend</h3>
+            <p style="font-size: 0.9rem; color: #666; margin-bottom: 1rem;">Expenses you paid for in the last 6 months
+            </p>
+            <canvas id="monthlyChart" style="max-height: 300px;"></canvas>
+        </div>
+
+        <!-- Paid vs Unpaid -->
+        <div class="glass-container">
+            <h3>Payment Status</h3>
+            <p style="font-size: 0.9rem; color: #666; margin-bottom: 1rem;">Your settlement status</p>
+            <canvas id="pieChart" style="max-height: 300px;"></canvas>
+        </div>
+    </div>
+
+    <!-- Top Expenses -->
+    <div class="glass-container">
+        <h3>Top 5 Expenses</h3>
+        <p style="font-size: 0.9rem; color: #666; margin-bottom: 1rem;">Your largest expenses</p>
+        {% if top_expenses %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid rgba(0,0,0,0.1);">
+                        <th style="padding: 1rem; text-align: left;">Description</th>
+                        <th style="padding: 1rem; text-align: right;">Amount</th>
+                        <th style="padding: 1rem; text-align: right;">Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for expense in top_expenses %}
+                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.05);">
+                        <td style="padding: 1rem;"><strong>{{ expense.description }}</strong></td>
+                        <td style="padding: 1rem; text-align: right; font-weight: bold; color: #2575fc;">PKR {{
+                            "%.2f"|format(expense.amount) }}</td>
+                        <td style="padding: 1rem; text-align: right;">{{ expense.date.strftime('%Y-%m-%d') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="text-align: center; color: #999; padding: 2rem;">No expenses yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<script>
+    // Monthly Spending Trend Chart
+    const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
+    const monthlyChart = new Chart(monthlyCtx, {
+        type: 'line',
+        data: {
+            labels: {{ months | tojson }},
+    datasets: [{
+        label: 'Amount Spent (PKR)',
+        data: {{ amounts | tojson }},
+        borderColor: '#6a11cb',
+        backgroundColor: 'rgba(106, 17, 203, 0.1)',
+        borderWidth: 3,
+        tension: 0.4,
+        fill: true
+        }]
+    },
+    options: {
+        responsive: true,
+            maintainAspectRatio: true,
+                plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                    ticks: {
+                    callback: function(value) {
+                        return 'PKR ' + value.toFixed(0);
+                    }
+                }
+            }
+        }
+    }
+});
+
+    // Paid vs Unpaid Pie Chart
+    const pieCtx = document.getElementById('pieChart').getContext('2d');
+    const pieChart = new Chart(pieCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Paid', 'Unpaid'],
+            datasets: [{
+                data: [{{ paid_count }}, {{ unpaid_count }}],
+        backgroundColor: ['#2ecc71', '#e74c3c'],
+        borderWidth: 0
+    }]
+    },
+    options: {
+        responsive: true,
+            maintainAspectRatio: true,
+                plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+</script>
+
+<style>
+    @media (max-width: 768px) {
+        div[style*="grid-template-columns: 2fr 1fr"] {
+            grid-template-columns: 1fr !important;
+        }
+    }
+</style>
+{% endblock %}

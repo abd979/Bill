@@ -200,16 +200,198 @@ def pay_settlement(settlement_id):
     flash('Payment recorded')
     return redirect(url_for('dashboard'))
 
+@app.route('/edit_expense/<int:expense_id>', methods=['GET', 'POST'])
+@login_required
+def edit_expense(expense_id):
+    expense = Expense.query.get_or_404(expense_id)
+    
+    # Only payer or admin can edit
+    if expense.payer_id != current_user.id and not current_user.is_admin:
+        flash('Unauthorized')
+        return redirect(url_for('history'))
+    
+    if request.method == 'POST':
+        new_description = request.form.get('description')
+        new_amount = float(request.form.get('amount'))
+        
+        # Get selected users from checkboxes
+        selected_user_ids = request.form.getlist('selected_users')
+        
+        if not selected_user_ids:
+            flash('Please select at least one user to split with')
+            users = User.query.filter_by(is_admin=False).all()
+            # Get currently selected users
+            current_users = [s.user_id for s in expense.settlements]
+            return render_template('edit_expense.html', expense=expense, users=users, current_users=current_users)
+        
+        # Update expense
+        expense.description = new_description
+        expense.amount = new_amount
+        
+        # Delete old settlements
+        Settlement.query.filter_by(expense_id=expense.id).delete()
+        
+        # Include payer in the split if not already selected
+        if str(expense.payer_id) not in selected_user_ids:
+            selected_user_ids.append(str(expense.payer_id))
+        
+        # Create new settlements
+        split_amount = new_amount / len(selected_user_ids)
+        
+        for user_id in selected_user_ids:
+            user_id = int(user_id)
+            is_paid = (user_id == expense.payer_id)
+            settlement = Settlement(expense_id=expense.id, user_id=user_id, amount_due=split_amount, is_paid=is_paid)
+            db.session.add(settlement)
+        
+        db.session.commit()
+        flash('Expense updated successfully!')
+        return redirect(url_for('history'))
+    
+    # GET request - show edit form
+    users = User.query.filter_by(is_admin=False).all()
+    current_users = [s.user_id for s in expense.settlements]
+    return render_template('edit_expense.html', expense=expense, users=users, current_users=current_users)
+
+@app.route('/delete_expense/<int:expense_id>', methods=['POST'])
+@login_required
+def delete_expense(expense_id):
+    expense = Expense.query.get_or_404(expense_id)
+    
+    # Only payer or admin can delete
+    if expense.payer_id != current_user.id and not current_user.is_admin:
+        flash('Unauthorized')
+        return redirect(url_for('history'))
+    
+    # Delete all settlements
+    Settlement.query.filter_by(expense_id=expense.id).delete()
+    
+    # Delete expense
+    db.session.delete(expense)
+    db.session.commit()
+    
+    flash('Expense deleted successfully')
+    return redirect(url_for('history'))
+
+@app.route('/statistics')
+@login_required
+def statistics():
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    
+    # Calculate total spent (expenses I paid for)
+    my_expenses = Expense.query.filter_by(payer_id=current_user.id).all()
+    total_spent = sum(exp.amount for exp in my_expenses)
+    
+    # Calculate total I owe (unpaid settlements)
+    my_debts = Settlement.query.filter_by(user_id=current_user.id, is_paid=False).all()
+    total_owed = sum(debt.amount_due for debt in my_debts)
+    
+    # Calculate what others owe me
+    total_owed_to_me = 0
+    for exp in my_expenses:
+        for settlement in exp.settlements:
+            if not settlement.is_paid and settlement.user_id != current_user.id:
+                total_owed_to_me += settlement.amount_due
+    
+    # Net balance
+    net_balance = total_owed_to_me - total_owed
+    
+    # Top 5 expenses
+    top_expenses = sorted(my_expenses, key=lambda x: x.amount, reverse=True)[:5]
+    
+    # Monthly spending trend (last 6 months)
+    today = datetime.now()
+    six_months_ago = today - timedelta(days=180)
+    
+    monthly_data = defaultdict(float)
+    for exp in my_expenses:
+        if exp.date >= six_months_ago:
+            month_key = exp.date.strftime('%Y-%m')
+            monthly_data[month_key] += exp.amount
+    
+    # Generate all months for the last 6 months
+    months = []
+    amounts = []
+    for i in range(5, -1, -1):
+        month = (today - timedelta(days=30*i)).strftime('%Y-%m')
+        months.append((today - timedelta(days=30*i)).strftime('%b %Y'))
+        amounts.append(monthly_data.get(month, 0))
+    
+    # Paid vs Unpaid count
+    all_settlements = Settlement.query.filter_by(user_id=current_user.id).all()
+    paid_count = sum(1 for s in all_settlements if s.is_paid)
+    unpaid_count = sum(1 for s in all_settlements if not s.is_paid)
+    
+    return render_template('statistics.html',
+                          total_spent=total_spent,
+                          total_owed=total_owed,
+                          total_owed_to_me=total_owed_to_me,
+                          net_balance=net_balance,
+                          top_expenses=top_expenses,
+                          months=months,
+                          amounts=amounts,
+                          paid_count=paid_count,
+                          unpaid_count=unpaid_count)
+
 @app.route('/history')
 @login_required
 def history():
-    # Show all debts that involve me (either as payer or debtor)
-    # Actually, user wants to see "all the history". Let's show all for now or just relevant?
-    # "users can see all the history" - implies transparency.
-    expenses = Expense.query.order_by(Expense.date.desc()).all()
-    return render_template('history.html', expenses=expenses)
+    # Get filter parameters
+    search_query = request.args.get('search', '').strip()
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    user_filter = request.args.get('user_id', '')
+    status_filter = request.args.get('status', '')
+    
+    # Base query
+    query = Expense.query
+    
+    # Apply search filter
+    if search_query:
+        query = query.filter(Expense.description.ilike(f'%{search_query}%'))
+    
+    # Apply date range filters
+    if date_from:
+        from datetime import datetime
+        date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
+        query = query.filter(Expense.date >= date_from_obj)
+    
+    if date_to:
+        from datetime import datetime
+        date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
+        # Add one day to include the entire end date
+        from datetime import timedelta
+        date_to_obj = date_to_obj + timedelta(days=1)
+        query = query.filter(Expense.date < date_to_obj)
+    
+    # Apply user filter
+    if user_filter:
+        query = query.filter(Expense.payer_id == int(user_filter))
+    
+    # Get expenses
+    expenses = query.order_by(Expense.date.desc()).all()
+    
+    # Apply status filter (requires checking settlements)
+    if status_filter:
+        filtered_expenses = []
+        for expense in expenses:
+            if status_filter == 'paid':
+                # All settlements must be paid
+                if all(s.is_paid for s in expense.settlements):
+                    filtered_expenses.append(expense)
+            elif status_filter == 'unpaid':
+                # At least one settlement is unpaid
+                if any(not s.is_paid for s in expense.settlements):
+                    filtered_expenses.append(expense)
+        expenses = filtered_expenses
+    
+    # Get all users for filter dropdown
+    all_users = User.query.all()
+    
+    return render_template('history.html', expenses=expenses, all_users=all_users,
+                          search_query=search_query, date_from=date_from, date_to=date_to,
+                          user_filter=user_filter, status_filter=status_filter)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
-
+    app.run(debug=True)
