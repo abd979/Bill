@@ -8,6 +8,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(200), nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
     
     # Relationships
@@ -30,3 +31,11 @@ class Settlement(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     amount_due = db.Column(db.Float, nullable=False)
     is_paid = db.Column(db.Boolean, default=False)
+
+class EmailSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    gmail_address = db.Column(db.String(200), nullable=True)
+    gmail_app_password = db.Column(db.String(200), nullable=True)
+    reminder_hours = db.Column(db.Integer, default=24)
+    reminders_enabled = db.Column(db.Boolean, default=False)
+    last_reminder_sent = db.Column(db.DateTime, nullable=True)
