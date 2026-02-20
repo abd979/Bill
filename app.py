@@ -426,51 +426,69 @@ def delete_expense(expense_id):
 def statistics():
     from datetime import datetime, timedelta
     from collections import defaultdict
-    
-    # Calculate total spent (expenses I paid for)
-    my_expenses = Expense.query.filter_by(payer_id=current_user.id).all()
-    total_spent = sum(exp.amount for exp in my_expenses)
-    
-    # Calculate total I owe (unpaid settlements)
-    my_debts = Settlement.query.filter_by(user_id=current_user.id, is_paid=False).all()
-    total_owed = sum(debt.amount_due for debt in my_debts)
-    
-    # Calculate what others owe me
+
+    # --- Expenses the user PAID FOR ---
+    my_paid_expenses = Expense.query.filter_by(payer_id=current_user.id).all()
+    total_spent_as_payer = sum(exp.amount for exp in my_paid_expenses)
+
+    # --- Settlements involving the current user (splits they owe) ---
+    my_settlements = Settlement.query.filter_by(user_id=current_user.id).all()
+
+    # Total I owe (unpaid debts on expenses others paid)
+    total_owed = sum(
+        s.amount_due for s in my_settlements
+        if not s.is_paid and s.expense.payer_id != current_user.id
+    )
+
+    # Total amount of all splits I'm part of (my share across all expenses)
+    total_my_share = sum(s.amount_due for s in my_settlements)
+
+    # Total spent = amount I paid out-of-pocket for group + my share of others' expenses
+    total_spent = total_spent_as_payer + sum(
+        s.amount_due for s in my_settlements
+        if s.expense.payer_id != current_user.id
+    )
+
+    # --- What others owe me (unpaid shares on expenses I paid) ---
     total_owed_to_me = 0
-    for exp in my_expenses:
+    for exp in my_paid_expenses:
         for settlement in exp.settlements:
             if not settlement.is_paid and settlement.user_id != current_user.id:
                 total_owed_to_me += settlement.amount_due
-    
-    # Net balance
+
+    # Net balance: positive = people owe me more than I owe
     net_balance = total_owed_to_me - total_owed
-    
-    # Top 5 expenses
-    top_expenses = sorted(my_expenses, key=lambda x: x.amount, reverse=True)[:5]
-    
-    # Monthly spending trend (last 6 months)
+
+    # --- Top 5 expenses user is involved in (as payer or participant) ---
+    involved_expense_ids = {s.expense_id for s in my_settlements} | {e.id for e in my_paid_expenses}
+    all_involved = Expense.query.filter(Expense.id.in_(involved_expense_ids)).all() if involved_expense_ids else []
+    top_expenses = sorted(all_involved, key=lambda x: x.amount, reverse=True)[:5]
+
+    # --- Monthly spending trend (last 6 months) — expenses user is involved in ---
     today = datetime.now()
     six_months_ago = today - timedelta(days=180)
-    
+
     monthly_data = defaultdict(float)
-    for exp in my_expenses:
+    # Expenses I paid for
+    for exp in my_paid_expenses:
         if exp.date >= six_months_ago:
-            month_key = exp.date.strftime('%Y-%m')
-            monthly_data[month_key] += exp.amount
-    
-    # Generate all months for the last 6 months
+            monthly_data[exp.date.strftime('%Y-%m')] += exp.amount
+    # My share in expenses others paid
+    for s in my_settlements:
+        if s.expense.payer_id != current_user.id and s.expense.date >= six_months_ago:
+            monthly_data[s.expense.date.strftime('%Y-%m')] += s.amount_due
+
     months = []
     amounts = []
     for i in range(5, -1, -1):
-        month = (today - timedelta(days=30*i)).strftime('%Y-%m')
-        months.append((today - timedelta(days=30*i)).strftime('%b %Y'))
-        amounts.append(monthly_data.get(month, 0))
-    
-    # Paid vs Unpaid count
-    all_settlements = Settlement.query.filter_by(user_id=current_user.id).all()
-    paid_count = sum(1 for s in all_settlements if s.is_paid)
-    unpaid_count = sum(1 for s in all_settlements if not s.is_paid)
-    
+        d = today - timedelta(days=30 * i)
+        months.append(d.strftime('%b %Y'))
+        amounts.append(round(monthly_data.get(d.strftime('%Y-%m'), 0), 2))
+
+    # --- Paid vs Unpaid settlements (my debts) ---
+    paid_count = sum(1 for s in my_settlements if s.is_paid)
+    unpaid_count = sum(1 for s in my_settlements if not s.is_paid)
+
     return render_template('statistics.html',
                           total_spent=total_spent,
                           total_owed=total_owed,
@@ -481,6 +499,7 @@ def statistics():
                           amounts=amounts,
                           paid_count=paid_count,
                           unpaid_count=unpaid_count)
+
 
 @app.route('/history')
 @login_required
